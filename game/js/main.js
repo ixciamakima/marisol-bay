@@ -88,7 +88,7 @@ class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1.2;
     document.getElementById('game').appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xf7b26a);
@@ -105,7 +105,7 @@ class Game {
     this.sun.shadow.camera.far = 700;
     this.sun.shadow.bias = -0.0004;
     this.scene.add(this.sun);
-    this.scene.add(new THREE.HemisphereLight(0x87a5c9, 0x8a6f4d, 0.85));
+    this.scene.add(new THREE.HemisphereLight(0x87a5c9, 0x8a6f4d, 1.5));
     this.camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 1200);
     this.camera.position.set(SPAWN.x, 8, SPAWN.z + 12);
     addEventListener('resize', () => {
@@ -519,7 +519,6 @@ class Game {
       document.getElementById('start-screen').classList.add('hidden');
       this.hud.show();
       this.mode = 'playing';
-      this.missions.index = 0;
       this.sound.setMuted(true);
     };
     if (this.shotMode === 'cover') {
@@ -540,20 +539,42 @@ class Game {
       this.camYaw = 0;
       this.camDistTarget = 13;
       this.setWanted(3);
-      for (let i = 0; i < 3; i++) this.vehicles.spawnPolice(65, 40 + (i + 1) * 16);
+      // Police pursuit, staged deterministically ahead of the player so they
+      // stay in frame: spawnPolice() picks a random road point instead.
+      for (let i = 0; i < 3; i++) {
+        const pc = this.vehicles.spawnCar(CAR_DEFS[0], 65 + (i % 2 ? -3.5 : 3.5), 56 + i * 12, 0, true);
+        pc.isPolice = true;
+        pc.speed = 24;
+        this.vehicles.police.push(pc);
+      }
       this.vehicles.spawnTraffic(5, 65, 0);
       this.missions.index = 3;
       this.missions.startStory();
       startPlaying();
     } else if (this.shotMode === 'street') {
-      this.player.place(-32, -18, Math.PI * 0.9);
+      // Plaza del Sol park centre is (32.5, 32.5) with a fountain (r 7.6) —
+      // stand on the open grass south of it, facing the fountain, so the
+      // camera has a clear sightline (the old (-32,-18) spot was inside a
+      // building block and the camera filmed a wall).
+      this.player.place(20, 44, Math.PI * 0.25);
       this.player.hasPistol = true;
       this.player.weapon = 'pistol';
-      this.camYaw = Math.PI * 0.9;
-      this.camDistTarget = 8;
+      this.camYaw = Math.PI * 0.25;
+      this.camDistTarget = 9;
       this.setWanted(1);
-      this.missions.index = 4;
+      this.missions.index = 0;
       this.missions.startStory();
+      // Rival crew shooting in the plaza — spawned by hand so they are in
+      // frame (mission 5's rivals spawn at the far docks instead).
+      for (let i = 0; i < 3; i++) {
+        const a = [0.5, 2.6, 4.7][i];
+        const r = this.peds.spawnPed(20 + Math.cos(a) * 10, 44 + Math.sin(a) * 10, false);
+        r.isRival = true;
+        r.hp = 100;
+        r.state = 'chase';
+        r.speed = 3.4;
+        this.missions.rivals.push(r);
+      }
       startPlaying();
     } else if (this.shotMode === 'sunset') {
       const car = spawn(-195, 30, Math.PI, CAR_DEFS[1]);

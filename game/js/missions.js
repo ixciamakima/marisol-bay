@@ -3,6 +3,22 @@
 // The manager owns the objective text, the 3D beacon and the mission timers.
 import * as THREE from 'three';
 import { dist2d, clamp } from './util.js';
+import { ROADS } from './city.js';
+
+// Snap a point to the nearest sidewalk: nearest road line + 10.5 (sidewalk
+// strip between the asphalt edge at 7 and the building line at 10), so a
+// waiting fare customer never spawns inside a city block.
+function snapToSidewalk(x, z) {
+  let best = null;
+  for (const r of ROADS) {
+    const dx = Math.abs(x - r);
+    if (!best || dx < best.d) best = { d: dx, axis: 'x', r };
+    const dz = Math.abs(z - r);
+    if (!best || dz < best.d) best = { d: dz, axis: 'z', r };
+  }
+  if (best.axis === 'x') return { x: best.r + 10.5, z };
+  return { x, z: best.r + 10.5 };
+}
 
 const MISSIONS = [
   {
@@ -16,8 +32,8 @@ const MISSIONS = [
     id: 'first-fare', title: 'First Fare', reward: 150,
     intro: 'A customer is waiting on the beachfront. Pick them up — in any car — and drop them at the Bayview Hotel.',
     steps: [
-      { kind: 'pickup', x: -216, z: -120, radius: 5, text: 'Pick up the customer at Solmarina Beach' },
-      { kind: 'deliver', x: -210, z: 65, radius: 7, time: 90, text: 'Drop the customer at the Bayview Hotel' },
+      { kind: 'pickup', x: -206, z: -120, radius: 12, text: 'Pick up the customer at Solmarina Beach' },
+      { kind: 'deliver', x: -195, z: 65, radius: 7, time: 90, text: 'Drop the customer at the Bayview Hotel' },
     ],
   },
   {
@@ -25,7 +41,7 @@ const MISSIONS = [
     intro: 'Sal needs a Comet GT, and there is one parked at the marina yard. Take it. Quietly is optional.',
     steps: [
       { kind: 'steal', x: 32, z: 210, radius: 5, text: 'Steal the Comet GT at the marina yard' },
-      { kind: 'deliver', x: 97, z: 97, radius: 8, time: 120, text: 'Deliver the Comet GT to Sal\u2019s garage' },
+      { kind: 'deliver', x: 97, z: 65, radius: 8, time: 120, text: 'Deliver the Comet GT to Sal\u2019s garage' },
     ],
   },
   {
@@ -39,8 +55,8 @@ const MISSIONS = [
     id: 'dockside-deal', title: 'Dockside Deal', reward: 500,
     intro: 'Vera\u2019s deal at the marina went bad. The Solano crew is shooting. Take them out and grab the package. Vera gave you a pistol.',
     steps: [
-      { kind: 'combat', x: 0, z: 250, radius: 40, count: 4, text: 'Clear the docks of the rival crew' },
-      { kind: 'collect', x: 65, z: 250, radius: 5, text: 'Collect the package from pier 4' },
+      { kind: 'combat', x: 0, z: 215, radius: 40, count: 4, text: 'Clear the docks of the rival crew' },
+      { kind: 'collect', x: 65, z: 222, radius: 5, text: 'Collect the package from pier 4' },
     ],
   },
   {
@@ -219,6 +235,9 @@ export class MissionManager {
   cleanupStep() {
     if (this.customer) { this.G.peds.removePed(this.customer); this.customer = null; }
     if (this.stealCar) {
+      // If the player is still sitting in the stolen car, get them out first —
+      // otherwise player.inCar would keep pointing at a removed object.
+      if (this.G.player.inCar === this.stealCar) this.G.player.exitCar();
       this.G.vehicles.parked = this.G.vehicles.parked.filter((c) => c !== this.stealCar);
       this.G.scene.remove(this.stealCar.group);
       this.stealCar = null;
@@ -272,8 +291,10 @@ export class MissionManager {
     if (!this.fare && !this.active && this.index >= 1 && this.fareCooldown <= 0) {
       this.fareCooldown = 26;
       const a = Math.random() * Math.PI * 2;
-      const cx = clamp(pp.x + Math.cos(a) * 60, -210, 240);
-      const cz = clamp(pp.z + Math.sin(a) * 60, -240, 240);
+      const cx0 = clamp(pp.x + Math.cos(a) * 60, -210, 240);
+      const cz0 = clamp(pp.z + Math.sin(a) * 60, -240, 240);
+      // Waiting customers stand on the sidewalk, never inside a block.
+      const { x: cx, z: cz } = snapToSidewalk(cx0, cz0);
       if (!G.city.isWater(cx, cz) && cx > -220) {
         this.fare = {
           customer: G.peds.spawnCustomer(cx, cz),
@@ -362,7 +383,7 @@ export class MissionManager {
       this.G.peds.removePed(c);
       this.fare.picked = true;
       // Destination: a hotel or landmark on the far side of town.
-      const dests = [[-210, 65], [65, -195], [195, 195], [-32, -32], [130, -130]];
+      const dests = [[-195, 65], [65, -195], [195, 195], [0, -32], [130, -130]];
       const [dx, dz] = dests[Math.floor(Math.random() * dests.length)];
       this.fare.destX = dx; this.fare.destZ = dz;
       this.fare.time = 75;
@@ -379,6 +400,8 @@ export class MissionManager {
   updateFare(dt) {
     if (!this.fare || !this.fare.picked) return;
     this.fare.time -= dt;
+    // Keep the countdown live in the objective text.
+    this.fare.text = `Taxi fare — deliver in ${Math.max(0, Math.ceil(this.fare.time))}s for $${this.fare.pay}`;
     const p = this.playerPos();
     if (dist2d(p.x, p.z, this.fare.destX, this.fare.destZ) < 8) {
       this.G.addCash(this.fare.pay);

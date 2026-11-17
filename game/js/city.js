@@ -37,7 +37,7 @@ function roadTexture() {
   const c = document.createElement('canvas');
   c.width = 128; c.height = 128;
   const g = c.getContext('2d');
-  g.fillStyle = '#23262e'; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#484e5a'; g.fillRect(0, 0, 128, 128);
   g.fillStyle = '#f5d76e';
   g.fillRect(62, 8, 4, 34); g.fillRect(62, 68, 4, 34);
   g.fillStyle = 'rgba(255,255,255,0.55)';
