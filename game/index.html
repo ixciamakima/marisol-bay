@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Marisol Bay — Open-World Crime</title>
+<link rel="stylesheet" href="css/style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
+</head>
+<body>
+<div id="game"></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="top-left">
+    <div id="cash">$<span id="cash-value">500</span></div>
+    <div id="respect">RESPECT <span id="respect-value">0</span></div>
+    <div id="clock">18:42</div>
+  </div>
+  <div id="wanted"><span class="star">&#9733;</span><span class="star">&#9733;</span><span class="star">&#9733;</span><span class="star">&#9733;</span><span class="star">&#9733;</span></div>
+  <div id="objective"><span id="objective-label">OBJECTIVE</span><span id="objective-text"></span></div>
+  <div id="toast"></div>
+  <div id="bottom-left">
+    <div id="health-wrap"><div id="health-bar"></div><span id="health-text">100</span></div>
+    <div id="weapon">FISTS</div>
+  </div>
+  <div id="bottom-right">
+    <canvas id="minimap" width="220" height="220"></canvas>
+    <div id="speed"><span id="speed-value">0</span><span id="speed-unit">km/h</span></div>
+    <div id="car-name"></div>
+  </div>
+  <div id="hint"></div>
+  <div id="damage"></div>
+  <div id="center-msg"></div>
+</div>
+
+<!-- Start screen -->
+<div id="start-screen">
+  <div class="title-block">
+    <div class="title-kicker">WELCOME TO</div>
+    <h1>MARISOL<br>BAY</h1>
+    <div class="title-sub">AN OPEN-WORLD CRIME STORY &middot; A SUN-SOAKED CITY OF YOUR OWN</div>
+  </div>
+  <div class="menu-panel">
+    <p class="story">Leo Marchetti is back in Marisol Bay after five years away. The city
+    remembers him &mdash; and so do the people he owes. Work for fixer Vera Solano,
+    steal what you need, outrun the Marisol Bay Police, and take the city back,
+    one job at a time.</p>
+    <div class="menu-buttons">
+      <button id="btn-new" class="menu-btn primary">NEW GAME</button>
+      <button id="btn-continue" class="menu-btn hidden">CONTINUE</button>
+      <button id="btn-how" class="menu-btn">HOW TO PLAY</button>
+    </div>
+    <div id="howto" class="hidden">
+      <table>
+        <tr><td>W A S D</td><td>Move / drive</td><td>SHIFT</td><td>Sprint / handbrake</td></tr>
+        <tr><td>E</td><td>Enter / exit car</td><td>F</td><td>Punch</td></tr>
+        <tr><td>MOUSE CLICK</td><td>Fire pistol (after Mission 5)</td><td>C</td><td>Camera</td></tr>
+        <tr><td>H</td><td>Horn</td><td>M</td><td>Mute</td><td>ESC</td><td>Pause</td></tr>
+      </table>
+      <p>Steal cars, lose the cops, finish jobs for Vera. Your save is kept in this browser.</p>
+    </div>
+    <div class="menu-foot">A 100% original game. No real city, person or brand appears in it.</div>
+  </div>
+</div>
+
+<!-- Pause screen -->
+<div id="pause-screen" class="hidden">
+  <h2>PAUSED</h2>
+  <p id="pause-stats"></p>
+  <div class="menu-buttons">
+    <button id="btn-resume" class="menu-btn primary">RESUME</button>
+    <button id="btn-restart" class="menu-btn">RESTART MISSION</button>
+    <button id="btn-quit" class="menu-btn">QUIT TO TITLE</button>
+  </div>
+  <p class="menu-foot">Progress saves automatically after every completed mission.</p>
+</div>
+
+<!-- Game over screen -->
+<div id="gameover-screen" class="hidden">
+  <h2>BUSTED / WASTED</h2>
+  <p id="gameover-text"></p>
+  <div class="menu-buttons">
+    <button id="btn-retry" class="menu-btn primary">TRY AGAIN</button>
+    <button id="btn-quit2" class="menu-btn">QUIT TO TITLE</button>
+  </div>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
