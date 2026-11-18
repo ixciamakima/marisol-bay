@@ -428,6 +428,137 @@ export class City {
       cone.castShadow = true;
       this.scene.add(cone);
     }
+    this.buildBeachUmbrellas(rng);
+    this.buildBenchesAndStalls();
+    this.buildBillboards();
+  }
+
+  // Striped umbrellas and towels down Solmarina Beach — colour that reads
+  // in a still frame from the beachfront road.
+  buildBeachUmbrellas(rng) {
+    const colors = [0xff5d5d, 0xffd75e, 0x5dd8e8, 0xff9a5d, 0x5de87a, 0xe85db0];
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0xd8d3c8 });
+    for (let i = 0; i < 9; i++) {
+      const x = -233 - (i % 3) * 2.5;
+      const z = -190 + i * 48 + rng() * 10;
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 2.4, 6), poleMat);
+      pole.position.set(x, 1.2, z);
+      this.scene.add(pole);
+      const canopy = new THREE.Mesh(new THREE.ConeGeometry(1.9, 0.6, 10),
+        new THREE.MeshLambertMaterial({ color: colors[i % colors.length] }));
+      canopy.position.set(x, 2.5, z);
+      canopy.castShadow = true;
+      this.scene.add(canopy);
+      const towel = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.06, 2.1),
+        new THREE.MeshLambertMaterial({ color: colors[(i + 2) % colors.length] }));
+      towel.position.set(x + 1.6, 0.12, z + 0.6);
+      this.scene.add(towel);
+    }
+  }
+
+  // Benches around the plaza fountain and along the boardwalk, plus two
+  // market stalls with striped canopies at the plaza corners.
+  buildBenchesAndStalls() {
+    const woodMat = new THREE.MeshLambertMaterial({ color: 0x7a5a38 });
+    const ironMat = new THREE.MeshLambertMaterial({ color: 0x2c2f36 });
+    const bench = (x, z, ry) => {
+      const g = new THREE.Group();
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.12, 0.55), woodMat);
+      seat.position.y = 0.55;
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.5, 0.1), woodMat);
+      back.position.set(0, 0.95, -0.26);
+      const legL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, 0.5), ironMat);
+      legL.position.set(-0.85, 0.27, 0);
+      const legR = legL.clone(); legR.position.x = 0.85;
+      g.add(seat, back, legL, legR);
+      g.position.set(x, 0.35, z);
+      g.rotation.y = ry;
+      g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      this.scene.add(g);
+      this.addCollider(x, z, 1.1, 0.45);
+    };
+    // Plaza del Sol centre is (32.5, 32.5); benches face the fountain.
+    bench(24.5, 24.5, Math.PI * 0.25);
+    bench(40.5, 24.5, -Math.PI * 0.25);
+    bench(24.5, 40.5, Math.PI * 0.75);
+    bench(40.5, 40.5, -Math.PI * 0.75);
+    // Boardwalk benches face the sea.
+    bench(-222.5, -160, -Math.PI / 2);
+    bench(-222.5, -40, -Math.PI / 2);
+    bench(-222.5, 80, -Math.PI / 2);
+    bench(-222.5, 200, -Math.PI / 2);
+    // Market stalls: counter, crates and a striped canopy.
+    const stall = (x, z, ry, colorA, colorB) => {
+      const g = new THREE.Group();
+      const counter = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.05, 1.3), woodMat);
+      counter.position.y = 0.55;
+      g.add(counter);
+      for (const [px, pz] of [[-1.6, -0.6], [1.6, -0.6], [-1.6, 0.6], [1.6, 0.6]]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.6, 6), ironMat);
+        pole.position.set(px, 1.3, pz);
+        g.add(pole);
+      }
+      for (let s = 0; s < 4; s++) {
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.1, 1.9),
+          new THREE.MeshLambertMaterial({ color: s % 2 ? colorA : colorB }));
+        stripe.position.set(-1.43 + s * 0.95, 2.62, 0);
+        stripe.rotation.z = 0.1;
+        g.add(stripe);
+      }
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.9, 0.9),
+        new THREE.MeshLambertMaterial({ color: 0xd87830 }));
+      crate.position.set(2.3, 0.45, 0.4);
+      g.add(crate);
+      g.position.set(x, 0.35, z);
+      g.rotation.y = ry;
+      g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+      this.scene.add(g);
+      this.addCollider(x, z, 1.9, 1.0);
+    };
+    stall(14, 51, 0, 0xe85d5d, 0xf5f0e6);
+    stall(51, 14, Math.PI / 2, 0x5dd8e8, 0xf5f0e6);
+  }
+
+  // Big original billboards on the plaza, the marina and the beachfront.
+  buildBillboards() {
+    this.addBillboard(32.5, 57.5, 0, 'SOLANO FINE FOODS', 0xffd75e);
+    this.addBillboard(100, 223, Math.PI, 'MARISOL MARINA — BOATS FOR HIRE', 0x7dd8ff);
+    this.addBillboard(-220, -60, Math.PI / 2, 'SOLMARINA BEACH CLUB', 0xff9a5d);
+  }
+
+  addBillboard(x, z, ry, text, color) {
+    const c = document.createElement('canvas');
+    c.width = 1024; c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = '#141a2e'; g.fillRect(0, 0, 1024, 256);
+    g.strokeStyle = '#' + color.toString(16).padStart(6, '0');
+    g.lineWidth = 10; g.strokeRect(10, 10, 1004, 236);
+    g.fillStyle = '#' + color.toString(16).padStart(6, '0');
+    g.font = 'bold 92px Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(text, 512, 134, 960);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const grp = new THREE.Group();
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(22, 5.5),
+      new THREE.MeshLambertMaterial({ map: tex, side: THREE.FrontSide, emissive: 0x1c1c1c }));
+    panel.position.y = 10.5;
+    grp.add(panel);
+    // A second face on the back, so the text never reads mirrored.
+    const back = panel.clone();
+    back.rotation.y = Math.PI;
+    back.position.z = -0.06;
+    grp.add(back);
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0x3c3f46 });
+    for (const px of [-7.5, 7.5]) {
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 8, 6), poleMat);
+      pole.position.set(px, 4, 0);
+      grp.add(pole);
+    }
+    grp.position.set(x, 0, z);
+    grp.rotation.y = ry;
+    grp.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    this.scene.add(grp);
   }
 
   update(t) {

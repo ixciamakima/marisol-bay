@@ -6,13 +6,19 @@ import { VehicleManager, CAR_DEFS } from './vehicles.js';
 import { PedestrianManager } from './pedestrians.js';
 import { Player } from './player.js';
 import { MissionManager } from './missions.js';
+import { PoliceHelicopter } from './helicopter.js';
+import { WEAPONS } from './weapons.js';
 import { SoundEngine } from './audio.js';
 import { Effects } from './effects.js';
 import { Hud } from './hud.js';
 import { clamp, damp, angleLerp, dist2d, pick, mulberry32 } from './util.js';
 
 const SAVE_KEY = 'marisol-bay-save-v1';
-const SPAWN = { x: -32, z: -20, heading: Math.PI * 0.75 };
+// Spawn is the safehouse doorstep: the alley at z ~ -32.5 threads between
+// the two buildings of the home block (verified clear of colliders — the
+// old spot 12 units north sat inside a building and the player crawled
+// out through its wall).
+const SPAWN = { x: -32, z: -32.5, heading: Math.PI / 2 };
 const CITY_SEED = 1337;
 
 window.__errors = [];
@@ -47,6 +53,7 @@ class Game {
     this.vehicles = new VehicleManager(this.scene, this.city, this.fx, this.sound, CITY_SEED + 7);
     this.peds = new PedestrianManager(this.scene, this.city, this.fx, this.sound, CITY_SEED + 11);
     this.player = new Player(this.scene, this.city, this.fx, this.sound);
+    this.heli = new PoliceHelicopter(this.scene);
     this.missions = new MissionManager(this.scene, this.gameContext());
     this.vehicles.spawnTraffic(14, SPAWN.x, SPAWN.z);
     this.peds.spawnCrowd(26, SPAWN.x, SPAWN.z);
@@ -126,6 +133,13 @@ class Game {
       }
       if (e.code === 'KeyC') this.camDistTarget = this.camDistTarget > 11 ? 8 : 13;
       if (e.code === 'KeyH' && this.player.inCar) this.sound.horn();
+      if (e.code === 'KeyR' && this.mode === 'playing') {
+        const name = this.sound.nextStation();
+        this.hud.toast(name, 'RADIO — press R to change station');
+      }
+      if (e.code === 'Digit1') this.equipWeapon('pistol');
+      if (e.code === 'Digit2') this.equipWeapon('smg');
+      if (e.code === 'Digit3') this.equipWeapon('shotgun');
       if (e.code === 'KeyE' && this.mode === 'playing') this.tryEnterExitCar();
       if (e.code === 'KeyF' && this.mode === 'playing') this.tryPunch();
       if (e.code === 'KeyT' && this.mode === 'playing') this.missions.tryPickupFare();
@@ -221,6 +235,7 @@ class Game {
         missionIndex: this.missions.index,
         completed: this.missions.completed,
         hasPistol: this.player.hasPistol,
+        weapons: [...this.player.owned],
         savedAt: Date.now(),
       }));
     } catch (e) {}
@@ -231,15 +246,13 @@ class Game {
     if (save) {
       this.cash = save.cash;
       this.respect = save.respect;
-      this.missions.index = Math.min(save.missionIndex, 5);
+      this.missions.index = Math.min(save.missionIndex, this.missions.total - 1);
       this.missions.completed = save.completed || 0;
-      this.player.hasPistol = !!save.hasPistol;
-      if (this.player.hasPistol) this.player.weapon = 'pistol';
+      this.player.setOwned(save.weapons || (save.hasPistol ? ['fists', 'pistol'] : ['fists']));
     } else {
       this.cash = 500; this.respect = 0;
       this.missions.index = 0; this.missions.completed = 0;
-      this.player.hasPistol = false;
-      this.player.weapon = 'fists';
+      this.player.setOwned(['fists']);
     }
     this.player.health = 100;
     this.player.dead = false;
@@ -250,7 +263,7 @@ class Game {
     this.hud.show();
     this.mode = 'playing';
     this.sound.resume();
-    this.sound.startMusic();
+    this.sound.startRadio(0);
     this.missions.startStory();
   }
 
@@ -259,7 +272,7 @@ class Game {
     this.mode = 'paused';
     const s = document.getElementById('pause-stats');
     s.innerHTML = `Cash $${this.cash.toLocaleString('en-US')} &nbsp;·&nbsp; Respect ${this.respect} &nbsp;·&nbsp; ` +
-      `Missions ${this.missions.completed}/6 &nbsp;·&nbsp; Wanted ${'★'.repeat(this.wanted)}${'☆'.repeat(5 - this.wanted)}`;
+      `Missions ${this.missions.completed}/${this.missions.total} &nbsp;·&nbsp; Wanted ${'★'.repeat(this.wanted)}${'☆'.repeat(5 - this.wanted)}`;
     document.getElementById('pause-screen').classList.remove('hidden');
   }
 
@@ -305,14 +318,14 @@ class Game {
     this.player.dead = false;
     this.setWanted(0);
     if (this.player.inCar) { this.player.exitCar(); }
-    this.player.place(-32, -20, Math.PI * 0.75);
-    this.camYaw = Math.PI * 0.75;
+    this.player.place(SPAWN.x, SPAWN.z, SPAWN.heading);
+    this.camYaw = SPAWN.heading;
     this.missions.failMission('Back on your feet. Same job.');
   }
 
   onMissionComplete(index) {
     this.saveGame();
-    if (index < 6) {
+    if (index < this.missions.total) {
       clearTimeout(this.missionTimer);
       this.missionTimer = setTimeout(() => {
         if (this.mode === 'playing') this.missions.startStory();
@@ -336,7 +349,7 @@ class Game {
     const step = this.missions.currentStep();
     const forced = this.missions.active && step && (step.kind === 'survive' || step.kind === 'drive');
     if (!forced && this.wanted > 0 && this.now - this.lastCrimeT > 25) {
-      const nearCop = this.vehicles.police.some((c) => {
+      const nearCop = this.heli.active || this.vehicles.police.some((c) => {
         const p = this.playerPos();
         return dist2d(c.x, c.z, p.x, p.z) < 45;
       }) || this.peds.cops.some((c) => {
@@ -415,9 +428,18 @@ class Game {
     }
   }
 
+  equipWeapon(id) {
+    if (this.mode !== 'playing' || this.player.inCar) return;
+    if (this.player.equip(id)) {
+      this.hud.centerMsg(WEAPONS[id].name, 800);
+    } else {
+      this.hud.toast('LOCKED', `You do not have the ${WEAPONS[id].name} yet — work for Vera.`);
+    }
+  }
+
   tryShoot() {
     const p = this.player;
-    if (!p || p.inCar || p.weapon !== 'pistol' || this.mode !== 'playing') return;
+    if (!p || p.inCar || p.weapon === 'fists' || this.mode !== 'playing') return;
     // Shoot toward where the camera looks (screen center), on the ground plane.
     const camDir = new THREE.Vector3();
     this.camera.getWorldDirection(camDir);
@@ -521,14 +543,37 @@ class Game {
       this.mode = 'playing';
       this.sound.setMuted(true);
     };
+    // Extra crowd clustered near the staged action, so the stills feel alive.
+    const extraCrowd = (cx, cz, n, r) => {
+      for (let i = 0; i < n; i++) {
+        const x = cx + (rng() - 0.5) * 2 * r;
+        const z = cz + (rng() - 0.5) * 2 * r;
+        if (this.city.isWater(x, z) || this.city.collide(x, z, 0.5).hit) continue;
+        const p = this.peds.spawnPed(x, z, false);
+        this.peds.peds.push(p);
+      }
+    };
     if (this.shotMode === 'cover') {
       const car = spawn(0, 96, Math.PI, CAR_DEFS[2]);
       this.player.enterCar(car);
       car.speed = 20;
       this.camYaw = Math.PI;
       this.camDistTarget = 12;
-      this.vehicles.spawnTraffic(6, 0, 60);
-      this.setWanted(2);
+      this.vehicles.spawnTraffic(10, 0, 60);
+      extraCrowd(0, 55, 10, 24);
+      this.setWanted(4);
+      // Four cruisers staged ahead in a loose roadblock so the wanted
+      // system spawns no random extras into the frame.
+      for (let i = 0; i < 4; i++) {
+        const pc = this.vehicles.spawnCar(CAR_DEFS[0],
+          (i % 2 ? -3.5 : 3.5), 64 + i * 7, Math.PI, true);
+        pc.isPolice = true;
+        pc.speed = 18;
+        this.vehicles.police.push(pc);
+      }
+      // The police helicopter hangs over the avenue ahead, its searchlight
+      // beam raking down onto the car (staged far ahead so it is in frame).
+      this.heli.stageAt(10, 40, 0, 96, 13);
       this.missions.index = 0;
       this.missions.startStory();
       startPlaying();
@@ -538,7 +583,6 @@ class Game {
       car.speed = 26;
       this.camYaw = 0;
       this.camDistTarget = 13;
-      this.setWanted(3);
       // Police pursuit, staged deterministically ahead of the player so they
       // stay in frame: spawnPolice() picks a random road point instead.
       for (let i = 0; i < 3; i++) {
@@ -547,34 +591,45 @@ class Game {
         pc.speed = 24;
         this.vehicles.police.push(pc);
       }
-      this.vehicles.spawnTraffic(5, 65, 0);
-      this.missions.index = 3;
+      this.vehicles.spawnTraffic(8, 65, 0);
+      extraCrowd(65, 20, 8, 30);
+      // Finale staging: step 2 of Skyfall is a 5-star escape drive, which
+      // also brings the helicopter in overhead.
+      this.missions.index = 8;
       this.missions.startStory();
+      this.missions.advanceStep();
+      this.heli.stageAt(57, 100, 65, 40, 13);
       startPlaying();
     } else if (this.shotMode === 'street') {
       // Plaza del Sol park centre is (32.5, 32.5) with a fountain (r 7.6) —
-      // stand on the open grass south of it, facing the fountain, so the
-      // camera has a clear sightline (the old (-32,-18) spot was inside a
-      // building block and the camera filmed a wall).
-      this.player.place(20, 44, Math.PI * 0.25);
-      this.player.hasPistol = true;
-      this.player.weapon = 'pistol';
-      this.camYaw = Math.PI * 0.25;
-      this.camDistTarget = 9;
+      // stand on the open grass south-west of it, facing the fountain, so
+      // the camera has a clear sightline (the old (-32,-18) spot was inside
+      // a building block and the camera filmed a wall). The stance point
+      // keeps the chase camera clear of the market-stall collider, which
+      // would otherwise lift it into a top-down view. Leo faces the
+      // fountain with his SMG up; the rival crew closes in around it.
+      this.player.place(24, 48, 2.64);
+      this.player.giveWeapon('pistol');
+      this.player.giveWeapon('smg');
+      this.player.equip('smg');
+      this.camYaw = 2.64;
+      this.camDistTarget = 8;
       this.setWanted(1);
       this.missions.index = 0;
       this.missions.startStory();
-      // Rival crew shooting in the plaza — spawned by hand so they are in
-      // frame (mission 5's rivals spawn at the far docks instead).
-      for (let i = 0; i < 3; i++) {
-        const a = [0.5, 2.6, 4.7][i];
-        const r = this.peds.spawnPed(20 + Math.cos(a) * 10, 44 + Math.sin(a) * 10, false);
+      // Rival crew shooting in the plaza — spawned by hand in the view
+      // cone so they are in frame (mission 5's rivals spawn far away).
+      for (const [rx, rz] of [[24, 33], [34, 42], [41, 34]]) {
+        const r = this.peds.spawnPed(rx, rz, false);
         r.isRival = true;
         r.hp = 100;
         r.state = 'chase';
         r.speed = 3.4;
+        this.peds.peds.push(r);
+        this.peds.armPed(r);
         this.missions.rivals.push(r);
       }
+      extraCrowd(32, 32, 10, 26);
       startPlaying();
     } else if (this.shotMode === 'sunset') {
       const car = spawn(-195, 30, Math.PI, CAR_DEFS[1]);
@@ -582,7 +637,8 @@ class Game {
       car.speed = 18;
       this.camYaw = Math.PI;
       this.camDistTarget = 12;
-      this.vehicles.spawnTraffic(5, -195, 0);
+      this.vehicles.spawnTraffic(9, -195, 0);
+      extraCrowd(-205, 10, 8, 40);
       this.missions.index = 5;
       this.missions.startStory();
       startPlaying();
@@ -640,6 +696,7 @@ class Game {
       this.peds.update(dt, pp.x, pp.z, !!p.inCar);
       this.missions.update(dt);
       this.missions.updateFare(dt);
+      this.heli.update(dt, pp.x, pp.z, this.wanted, this.now);
       this.updateWanted(dt);
       this.collideCars(dt);
       this.collidePoliceOnFoot(dt);
@@ -662,8 +719,8 @@ class Game {
       if (c && dist2d(p.inCar.x, p.inCar.z, c.x, c.z) < 8) hint = 'T — PICK UP FARE';
     }
     if (!hint && nearCar) hint = `E — ENTER ${nearCar.def.name.toUpperCase()}`;
-    if (!hint && p.inCar) hint = 'SPACE — HANDBRAKE · H — HORN · E — EXIT CAR';
-    if (!hint && p.weapon === 'pistol') hint = 'CLICK — FIRE · F — PUNCH';
+    if (!hint && p.inCar) hint = 'SPACE — HANDBRAKE · H — HORN · R — RADIO · E — EXIT CAR';
+    if (!hint && p.weapon !== 'fists') hint = 'CLICK — FIRE · 1/2/3 — WEAPONS · R — RADIO · F — PUNCH';
     if (!hint && this.now < 20) hint = 'WASD — MOVE · E — ENTER CAR · ESC — PAUSE';
     const hh = Math.floor(this.gameMinutes / 60);
     const mm = Math.floor(this.gameMinutes % 60);
@@ -674,7 +731,7 @@ class Game {
       respect: this.respect,
       wanted: this.wanted,
       health: p.health,
-      weapon: p.weapon === 'pistol' ? 'PISTOL' : 'FISTS',
+      weapon: WEAPONS[p.weapon].name,
       speedKmh: p.speedKmh,
       carName: p.inCar ? p.inCar.def.name.toUpperCase() : '',
       inCar: !!p.inCar,
@@ -690,6 +747,7 @@ class Game {
       traffic: this.vehicles.traffic,
       police: this.vehicles.police,
       rivals: this.missions.rivals,
+      heli: this.heli.active ? { x: this.heli.x, z: this.heli.z } : null,
       fareCustomer: this.missions.fare && !this.missions.fare.picked ? this.missions.fare.customer : null,
       marker,
     });

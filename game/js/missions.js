@@ -1,9 +1,10 @@
 // Marisol Bay — story missions and side jobs.
-// Six story jobs for fixer Vera Solano, plus repeatable taxi fares.
+// Nine story jobs for fixer Vera Solano, plus repeatable taxi fares.
 // The manager owns the objective text, the 3D beacon and the mission timers.
 import * as THREE from 'three';
 import { dist2d, clamp } from './util.js';
 import { ROADS } from './city.js';
+import { WEAPONS } from './weapons.js';
 
 // Snap a point to the nearest sidewalk: nearest road line + 10.5 (sidewalk
 // strip between the asphalt edge at 7 and the building line at 10), so a
@@ -66,6 +67,32 @@ const MISSIONS = [
       { kind: 'drive', x: 0, z: -248, radius: 10, time: 120, wanted: 4, text: 'Reach the north bridge checkpoint' },
     ],
   },
+  {
+    id: 'tide-runner', title: 'Tide Runner', reward: 600,
+    intro: 'A courier boat is docking at pier 5 with a package for Vera. Meet it at the marina, then run the package to her drop at the west avenue.',
+    steps: [
+      { kind: 'collect', x: 130, z: 220, radius: 5, text: 'Meet the courier boat at pier 5' },
+      { kind: 'deliver', x: -65, z: 195, radius: 7, time: 100, text: 'Run the package to Vera\u2019s drop' },
+    ],
+  },
+  {
+    id: 'corner-store', title: 'Corner Store', reward: 700, giveWeapon: 'smg',
+    intro: 'The Solano Mini-Mart on the avenue corner owes Vera protection money — and its guards disagree. Vera hands you an SMG. Keys 1/2/3 switch weapons.',
+    steps: [
+      { kind: 'goto', x: 65, z: 65, radius: 8, text: 'Go to the Solano Mini-Mart corner' },
+      { kind: 'combat', x: 65, z: 65, radius: 40, count: 5, text: 'Fight off the store guards' },
+      { kind: 'collect', x: 65, z: 65, radius: 5, text: 'Grab the register cash' },
+      { kind: 'deliver', x: -32, z: -32, radius: 8, time: 90, text: 'Bring the take back to Vera at the plaza' },
+    ],
+  },
+  {
+    id: 'skyfall', title: 'Skyfall', reward: 1200, giveWeapon: 'shotgun',
+    intro: 'The finale. Sal leaves you his shotgun. Grab the last package at the marina, then run the whole MBPD — helicopter and all — to the north bridge.',
+    steps: [
+      { kind: 'collect', x: 0, z: 222, radius: 5, text: 'Grab the last package at the marina' },
+      { kind: 'drive', x: 0, z: -248, radius: 10, time: 150, wanted: 5, text: 'Escape to the north bridge — lose the helicopter' },
+    ],
+  },
 ];
 
 export class MissionManager {
@@ -109,6 +136,7 @@ export class MissionManager {
   }
 
   current() { return MISSIONS[this.index] || null; }
+  get total() { return MISSIONS.length; }
   currentStep() {
     const m = this.current();
     return m ? m.steps[this.stepIndex] : null;
@@ -138,8 +166,13 @@ export class MissionManager {
     if (this.index >= MISSIONS.length) return;
     this.active = true;
     this.stepIndex = 0;
-    this.beginStep();
     const m = this.current();
+    // Some jobs come with hardware: the fixer hands over a new weapon.
+    if (m.giveWeapon && this.G.player.giveWeapon(m.giveWeapon)) {
+      this.G.player.equip(m.giveWeapon);
+      this.G.toast(`${WEAPONS[m.giveWeapon].name} ACQUIRED`, 'Keys 1 / 2 / 3 switch weapons. Click to fire.');
+    }
+    this.beginStep();
     this.G.toast(m.title.toUpperCase(), m.intro);
     this.G.sound.missionDone();
   }
@@ -163,9 +196,9 @@ export class MissionManager {
       G.vehicles.parked.push(def); // enterable, but not part of moving traffic
     }
     if (s.kind === 'combat') {
-      G.player.hasPistol = true;
-      G.player.weapon = 'pistol';
-      G.toast('PISTOL ACQUIRED', 'Click to fire. Watch your health.');
+      G.player.giveWeapon('pistol');
+      if (G.player.weapon === 'fists') G.player.equip('pistol');
+      G.toast('FIRE AT WILL', 'Click to fire. Watch your health.');
       this.rivals = [];
       for (let i = 0; i < s.count; i++) {
         const a = (i / s.count) * Math.PI * 2;
@@ -174,6 +207,10 @@ export class MissionManager {
         p.hp = 100;
         p.state = 'chase';
         p.speed = 3.4;
+        // Rivals must live in the ped list, or the player's shots and
+        // punches (which scan peds.peds) could never hit them.
+        G.peds.peds.push(p);
+        G.peds.armPed(p);
         this.rivals.push(p);
       }
     }

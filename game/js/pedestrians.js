@@ -117,6 +117,18 @@ export class PedestrianManager {
     return p;
   }
 
+  // Put a gun in a ped's hand (rival crews, so a firefight reads as one).
+  armPed(p) {
+    if (p.armed) return p;
+    const gun = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.11, 0.52),
+      new THREE.MeshLambertMaterial({ color: 0x181a1e }));
+    gun.position.set(0.34, 1.12, 0.3);
+    gun.castShadow = true;
+    p.group.add(gun);
+    p.armed = true;
+    return p;
+  }
+
   removePed(p) {
     this.scene.remove(p.group);
     this.peds = this.peds.filter((q) => q !== p);
@@ -136,7 +148,8 @@ export class PedestrianManager {
 
   scare(x, z, radius) {
     for (const p of this.peds) {
-      if (p.state === 'down' || p.isCop) continue;
+      // Cops hold their ground and rival crews stand and fight.
+      if (p.state === 'down' || p.isCop || p.isRival) continue;
       if (dist2d(x, z, p.x, p.z) < radius) {
         p.state = 'flee';
         p.stateT = 2 + this.rng() * 2;

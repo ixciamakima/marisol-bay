@@ -124,6 +124,8 @@ export class Hud {
     for (const c of world.traffic || []) if (!c.dead) dot(c.x, c.z, '#cfd6e4', 2);
     for (const c of world.police || []) if (!c.dead) dot(c.x, c.z, Math.floor(performance.now() / 200) % 2 ? '#ff4444' : '#4488ff', 3);
     for (const r of world.rivals || []) if (r.state !== 'down') dot(r.x, r.z, '#ff2222', 3);
+    // Police helicopter: a blinking violet dot while it hunts.
+    if (world.heli) dot(world.heli.x, world.heli.z, Math.floor(performance.now() / 250) % 2 ? '#e8b0ff' : '#ffffff', 3.5);
     if (world.fareCustomer) dot(world.fareCustomer.x, world.fareCustomer.z, '#37d67a', 3);
     // Mission marker: pulsing yellow diamond.
     if (world.marker) {

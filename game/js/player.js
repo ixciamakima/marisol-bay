@@ -2,6 +2,7 @@
 // carjacking, entering and leaving cars, health and weapons.
 import * as THREE from 'three';
 import { clamp, angleLerp, dist2d, damp } from './util.js';
+import { WEAPONS, weaponById } from './weapons.js';
 
 function makeLeoMesh() {
   const g = new THREE.Group();
@@ -40,14 +41,67 @@ export class Player {
     this.speed = 0;
     this.health = 100;
     this.maxHealth = 100;
-    this.weapon = 'fists';      // fists | pistol
-    this.hasPistol = false;
+    this.weapon = 'fists';      // fists | pistol | smg | shotgun
+    this.owned = ['fists'];     // weapons Leo has picked up so far
+    this.gun = this.makeGunMesh();
+    this.mesh.add(this.gun);
     this.inCar = null;          // Car or null
     this.punchT = 0;
     this.shootT = 0;
     this.walkPhase = 0;
     this.lastDamageT = -99;
     this.dead = false;
+  }
+
+  get hasPistol() { return this.owned.includes('pistol'); }
+
+  // A simple dark gun shape at Leo's right hand; it grows with the weapon.
+  makeGunMesh() {
+    const g = new THREE.Group();
+    const mat = new THREE.MeshLambertMaterial({ color: 0x181a1e });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.15, 0.5), mat);
+    body.position.z = 0.18;
+    const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.07, 0.34), mat);
+    barrel.position.set(0, 0.05, 0.55);
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.22, 0.1), mat);
+    mag.position.set(0, -0.16, 0.12);
+    mag.name = 'mag';
+    g.add(body, barrel, mag);
+    g.position.set(0.42, 1.12, 0.22);
+    g.visible = false;
+    g.traverse((o) => { if (o.isMesh) o.castShadow = true; });
+    return g;
+  }
+
+  // Size the gun to the weapon in hand and show or hide it.
+  refreshGunMesh() {
+    const def = weaponById(this.weapon);
+    this.gun.visible = this.weapon !== 'fists';
+    const len = this.weapon === 'shotgun' ? 1.5 : this.weapon === 'smg' ? 1.15 : 0.8;
+    this.gun.scale.set(1, 1, len);
+    const mag = this.gun.getObjectByName('mag');
+    if (mag) mag.visible = this.weapon === 'smg';
+  }
+
+  giveWeapon(id) {
+    if (!WEAPONS[id] || this.owned.includes(id)) return false;
+    this.owned.push(id);
+    return true;
+  }
+
+  equip(id) {
+    if (!this.owned.includes(id)) return false;
+    this.weapon = id;
+    this.refreshGunMesh();
+    return true;
+  }
+
+  setOwned(list) {
+    this.owned = ['fists'];
+    for (const id of list || []) if (WEAPONS[id] && id !== 'fists') this.giveWeapon(id);
+    const guns = this.owned.filter((w) => w !== 'fists');
+    this.weapon = guns.length ? guns[guns.length - 1] : 'fists';
+    this.refreshGunMesh();
   }
 
   place(x, z, heading) {
@@ -120,9 +174,11 @@ export class Player {
     this.mesh.userData.legR.rotation.x = -swing;
     this.mesh.userData.armL.rotation.x = -swing * 0.7;
     this.mesh.userData.armR.rotation.x = swing * 0.7;
-    // Punching animation.
+    // Punching animation; with a gun in hand the right arm stays up, aiming.
     if (this.punchT > 0.25) {
       this.mesh.userData.armR.rotation.x = -1.6;
+    } else if (this.weapon !== 'fists') {
+      this.mesh.userData.armR.rotation.x = -1.3;
     }
     this.mesh.position.set(this.x, 0, this.z);
     this.mesh.rotation.y = this.heading;
@@ -141,51 +197,62 @@ export class Player {
     return null;
   }
 
-  // Hitscan shot toward a world direction. Returns the ped hit, if any.
+  // Hitscan shot toward a world direction, driven by the weapon table:
+  // the pistol is slow and precise, the SMG fast and loose, the shotgun
+  // throws a fan of pellets that fades with range. Returns what was hit.
   shoot(dirX, dirZ, peds, cars) {
-    if (this.shootT > 0 || this.weapon !== 'pistol' || this.inCar) return null;
-    this.shootT = 0.32;
-    this.sound.gunshot();
+    const def = weaponById(this.weapon);
+    if (this.shootT > 0 || def.pellets === 0 || this.inCar) return null;
+    this.shootT = def.cooldown;
+    if (def.sound === 'smg') this.sound.gunshotSmg();
+    else if (def.sound === 'shotgun') this.sound.gunshotShotgun();
+    else this.sound.gunshot();
     const ox = this.x, oz = this.z;
-    const mx = ox + dirX * 1.2, mz = oz + dirZ * 1.2;
-    this.fx.muzzle(mx, 1.35, mz);
+    const baseAngle = Math.atan2(dirX, dirZ);
+    this.fx.muzzle(ox + dirX * 1.2, 1.35, oz + dirZ * 1.2);
     peds.scare(ox, oz, 26);
-    // Nearest ped roughly in the line of fire.
-    let best = null, bd = 42;
-    for (const p of peds.peds) {
-      if (p.state === 'down') continue;
-      const dx = p.x - ox, dz = p.z - oz;
-      const along = dx * dirX + dz * dirZ;
-      if (along < 1 || along > bd) continue;
-      const perp = Math.abs(dx * dirZ - dz * dirX);
-      if (perp < 1.1 + along * 0.06) { bd = along; best = p; }
-    }
-    if (best) {
-      if (best.isRival) {
-        best.hp = (best.hp ?? 100) - 34;
-        this.fx.sparks(best.x, 1.2, best.z, 6);
-        if (best.hp <= 0) peds.knockDown(best);
-      } else {
-        peds.knockDown(best);
+    let firstHit = null;
+    for (let pellet = 0; pellet < def.pellets; pellet++) {
+      const a = baseAngle + (Math.random() * 2 - 1) * def.spread;
+      const dx = Math.sin(a), dz = Math.cos(a);
+      // Nearest ped roughly in this pellet's line of fire.
+      let best = null, bd = def.range;
+      for (const p of peds.peds) {
+        if (p.state === 'down') continue;
+        const px = p.x - ox, pz = p.z - oz;
+        const along = px * dx + pz * dz;
+        if (along < 1 || along > bd) continue;
+        const perp = Math.abs(px * dz - pz * dx);
+        if (perp < 1.1 + along * 0.06) { bd = along; best = p; }
       }
-      return { ped: best };
+      if (best) {
+        if (best.isRival) {
+          best.hp = (best.hp ?? 100) - def.damage;
+          this.fx.sparks(best.x, 1.2, best.z, 4);
+          if (best.hp <= 0) peds.knockDown(best);
+        } else {
+          peds.knockDown(best);
+        }
+        if (!firstHit) firstHit = { ped: best };
+        continue;
+      }
+      // Or a car: damage it.
+      let bestCar = null, bcd = def.range;
+      for (const c of [...cars.traffic, ...cars.police, ...cars.parked]) {
+        if (c.dead) continue;
+        const px = c.x - ox, pz = c.z - oz;
+        const along = px * dx + pz * dz;
+        if (along < 1 || along > bcd) continue;
+        const perp = Math.abs(px * dz - pz * dx);
+        if (perp < 1.8 + along * 0.05) { bcd = along; bestCar = c; }
+      }
+      if (bestCar) {
+        cars.damageCar(bestCar, def.damage, true);
+        this.fx.sparks(bestCar.x, 1, bestCar.z, 4);
+        if (!firstHit) firstHit = { car: bestCar };
+      }
     }
-    // Or a car: damage it.
-    let bestCar = null, bcd = 42;
-    for (const c of [...cars.traffic, ...cars.police]) {
-      if (c.dead) continue;
-      const dx = c.x - ox, dz = c.z - oz;
-      const along = dx * dirX + dz * dirZ;
-      if (along < 1 || along > bcd) continue;
-      const perp = Math.abs(dx * dirZ - dz * dirX);
-      if (perp < 1.8 + along * 0.05) { bcd = along; bestCar = c; }
-    }
-    if (bestCar) {
-      cars.damageCar(bestCar, 34, true);
-      this.fx.sparks(bestCar.x, 1, bestCar.z, 6);
-      return { car: bestCar };
-    }
-    return { miss: true };
+    return firstHit || { miss: true };
   }
 
   sync() {
