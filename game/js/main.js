@@ -95,14 +95,15 @@ class Game {
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.2;
+    this.renderer.toneMappingExposure = 1.3;
     document.getElementById('game').appendChild(this.renderer.domElement);
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xf7b26a);
     this.scene.fog = new THREE.Fog(0xe8a06a, 180, 620);
-    // Golden-hour sun from the west-southwest.
+    // Golden-hour sun from the west-southwest, raised a little so the
+    // avenues and the plaza read bright and sun-soaked, not shadowed.
     this.sun = new THREE.DirectionalLight(0xffd9a0, 2.6);
-    this.sun.position.set(-190, 150, 120);
+    this.sun.position.set(-165, 215, 105);
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.camera.left = -260;
@@ -112,7 +113,7 @@ class Game {
     this.sun.shadow.camera.far = 700;
     this.sun.shadow.bias = -0.0004;
     this.scene.add(this.sun);
-    this.scene.add(new THREE.HemisphereLight(0x87a5c9, 0x8a6f4d, 1.5));
+    this.scene.add(new THREE.HemisphereLight(0x87a5c9, 0x8a6f4d, 1.65));
     this.camera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.1, 1200);
     this.camera.position.set(SPAWN.x, 8, SPAWN.z + 12);
     addEventListener('resize', () => {
@@ -558,8 +559,8 @@ class Game {
       this.player.enterCar(car);
       car.speed = 20;
       this.camYaw = Math.PI;
-      this.camDistTarget = 12;
-      this.vehicles.spawnTraffic(10, 0, 60);
+      this.camDistTarget = 10;
+      this.vehicles.spawnTraffic(6, 0, 60);
       extraCrowd(0, 55, 10, 24);
       this.setWanted(4);
       // Four cruisers staged ahead in a loose roadblock so the wanted
@@ -571,9 +572,9 @@ class Game {
         pc.speed = 18;
         this.vehicles.police.push(pc);
       }
-      // The police helicopter hangs over the avenue ahead, its searchlight
-      // beam raking down onto the car (staged far ahead so it is in frame).
-      this.heli.stageAt(10, 40, 0, 96, 13);
+      // The police helicopter hangs over the avenue ahead-left, clear of
+      // the objective banner, its searchlight beam raking down onto the car.
+      this.heli.stageAt(-11, 47, 0, 96, 10);
       this.missions.index = 0;
       this.missions.startStory();
       startPlaying();
@@ -582,44 +583,44 @@ class Game {
       this.player.enterCar(car);
       car.speed = 26;
       this.camYaw = 0;
-      this.camDistTarget = 13;
+      this.camDistTarget = 10.5;
       // Police pursuit, staged deterministically ahead of the player so they
       // stay in frame: spawnPolice() picks a random road point instead.
-      for (let i = 0; i < 3; i++) {
-        const pc = this.vehicles.spawnCar(CAR_DEFS[0], 65 + (i % 2 ? -3.5 : 3.5), 56 + i * 12, 0, true);
+      // Four cruisers in a staggered pack, close enough to read as a chase.
+      for (let i = 0; i < 4; i++) {
+        const pc = this.vehicles.spawnCar(CAR_DEFS[0], 65 + (i % 2 ? -3.5 : 3.5), 54 + i * 8, 0, true);
         pc.isPolice = true;
         pc.speed = 24;
         this.vehicles.police.push(pc);
       }
-      this.vehicles.spawnTraffic(8, 65, 0);
+      this.vehicles.spawnTraffic(8, 65, 110);
       extraCrowd(65, 20, 8, 30);
       // Finale staging: step 2 of Skyfall is a 5-star escape drive, which
       // also brings the helicopter in overhead.
       this.missions.index = 8;
       this.missions.startStory();
       this.missions.advanceStep();
-      this.heli.stageAt(57, 100, 65, 40, 13);
+      this.heli.stageAt(58, 92, 65, 40, 12);
       startPlaying();
     } else if (this.shotMode === 'street') {
-      // Plaza del Sol park centre is (32.5, 32.5) with a fountain (r 7.6) —
-      // stand on the open grass south-west of it, facing the fountain, so
-      // the camera has a clear sightline (the old (-32,-18) spot was inside
-      // a building block and the camera filmed a wall). The stance point
-      // keeps the chase camera clear of the market-stall collider, which
-      // would otherwise lift it into a top-down view. Leo faces the
-      // fountain with his SMG up; the rival crew closes in around it.
-      this.player.place(24, 48, 2.64);
+      // Plaza del Sol park centre is (32.5, 32.5) with a fountain (r 7.6).
+      // Round 4 stance: the sunlit east rim of the fountain, close in, so
+      // the gunfight fills the frame — the old south-west grass stance sat
+      // in building shadow and left Leo small in a sea of dark lawn. Leo
+      // faces the fountain with his SMG up; the rival crew closes in
+      // around the rim, every stance point outside the fountain collider.
+      this.player.place(46, 44, -2.28);
       this.player.giveWeapon('pistol');
       this.player.giveWeapon('smg');
       this.player.equip('smg');
-      this.camYaw = 2.64;
-      this.camDistTarget = 8;
+      this.camYaw = -2.28;
+      this.camDistTarget = 6.5;
       this.setWanted(1);
       this.missions.index = 0;
       this.missions.startStory();
       // Rival crew shooting in the plaza — spawned by hand in the view
       // cone so they are in frame (mission 5's rivals spawn far away).
-      for (const [rx, rz] of [[24, 33], [34, 42], [41, 34]]) {
+      for (const [rx, rz] of [[41, 40], [43, 36], [38, 42]]) {
         const r = this.peds.spawnPed(rx, rz, false);
         r.isRival = true;
         r.hp = 100;
@@ -629,16 +630,29 @@ class Game {
         this.peds.armPed(r);
         this.missions.rivals.push(r);
       }
-      extraCrowd(32, 32, 10, 26);
+      extraCrowd(30, 30, 8, 20);
       startPlaying();
+      // The screenshot driver fires Leo's SMG through the game's own
+      // trigger once the camera has settled behind him, so a muzzle flash
+      // is up in the captured frame.
     } else if (this.shotMode === 'sunset') {
-      const car = spawn(-195, 30, Math.PI, CAR_DEFS[1]);
+      const car = spawn(-195, 52, Math.PI, CAR_DEFS[1]);
       this.player.enterCar(car);
       car.speed = 18;
       this.camYaw = Math.PI;
-      this.camDistTarget = 12;
-      this.vehicles.spawnTraffic(9, -195, 0);
-      extraCrowd(-205, 10, 8, 40);
+      this.camDistTarget = 10;
+      this.vehicles.spawnTraffic(7, -195, 20);
+      // Two cruisers staged ahead on the coast road, so the getaway the
+      // HUD names is visible in frame, not left to random police spawns.
+      for (const [px, pz] of [[-191.5, 24], [-198.5, 6]]) {
+        const pc = this.vehicles.spawnCar(CAR_DEFS[0], px, pz, Math.PI, true);
+        pc.isPolice = true;
+        pc.speed = 17;
+        this.vehicles.police.push(pc);
+      }
+      // Crowd on the beach side of the road, clear of the traffic lanes
+      // (the old wide cluster scattered peds into the road to be run over).
+      extraCrowd(-216, 42, 8, 13);
       this.missions.index = 5;
       this.missions.startStory();
       startPlaying();
